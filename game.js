@@ -41,13 +41,24 @@ document.addEventListener('DOMContentLoaded', function() {
  * Starts a new chess game with the selected settings
  */
 function startGame() {
+  // Stop any existing game and timer
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  
   // Initialize new game
   game = new Chess();
   aiLevel = parseInt(document.getElementById("aiLevel").value);
   isBlitz = document.getElementById("mode").value === "blitz";
-  playerTime = aiTime = isBlitz ? 300 : 900; // 5 or 15 minutes
+  
+  // Set exact time values based on game mode
+  playerTime = isBlitz ? 300 : 900; // 5 or 15 minutes
+  aiTime = isBlitz ? 300 : 900;
+  
+  // Set game state
   gameActive = true;
-  isPlayerTurn = true;
+  isPlayerTurn = true; // Player always starts first
   isPaused = false;
   
   // Update button state
@@ -55,12 +66,9 @@ function startGame() {
   pauseButton.disabled = false;
   undoButton.disabled = false;
   
-  // Update the UI
-  updateTimers();
-  updateStatus();
-  
-  // Clear existing timer if any
-  if (timerInterval) clearInterval(timerInterval);
+  // Display exact initial times
+  document.getElementById('playerTime').innerText = isBlitz ? "5:00" : "15:00";
+  document.getElementById('aiTime').innerText = isBlitz ? "5:00" : "15:00";
   
   // Set up the board
   if (board) {
@@ -75,7 +83,7 @@ function startGame() {
     orientation: 'white'
   });
 
-  // Start the timer
+  // Start the timer only after everything is set up
   lastTimerUpdate = Date.now();
   timerInterval = setInterval(updateTimers, 1000);
   
@@ -110,13 +118,13 @@ function updateTimers() {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! AI wins!";
-    alert("Time's up! AI wins!");
+    // Removed alert
   }
   if (aiTime <= 0 && gameActive) {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! You win!";
-    alert("Time's up! You win!");
+    // Removed alert
   }
 }
 
@@ -125,7 +133,7 @@ function updateTimers() {
  */
 function formatTime(sec) {
   const minutes = Math.floor(sec / 60);
-  const seconds = sec % 60;
+  const seconds = Math.floor(sec % 60);
   return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
 }
 
@@ -161,7 +169,7 @@ function onDrop(source, target) {
   // Update board position
   board.position(game.fen());
   
-  // Switch turns
+  // Switch turns - end player's timer and start AI's timer
   isPlayerTurn = false;
   lastTimerUpdate = Date.now(); // Reset timer at turn switch
   
@@ -213,8 +221,8 @@ function makeAIMove() {
   statusElement.classList.add('thinking');
   
   // Scale AI thinking time based on difficulty level
-  // Novice: 500ms, Intermediate: 1000ms, Master: 2000ms
-  const thinkingTime = aiLevel === 1 ? 500 : (aiLevel === 2 ? 1500 : 3000);
+  // Novice: 1000ms, Intermediate: 1000ms, Master: 2000ms
+  const thinkingTime = aiLevel === 1 ? 1500 : (aiLevel === 2 ? 1500 : 3000);
   
   // Disable board interaction during AI's turn
   board.draggable = false;
@@ -440,10 +448,10 @@ function resetGame() {
   gameActive = false;
   isPaused = false;
   
-  // Reset timers to default values
-  playerTime = aiTime = isBlitz ? 300 : 900;
-  document.getElementById('playerTime').innerText = formatTime(Math.ceil(playerTime));
-  document.getElementById('aiTime').innerText = formatTime(Math.ceil(aiTime));
+  // Reset timers to default values with fixed display
+  const timeDisplay = isBlitz ? "5:00" : "15:00";
+  document.getElementById('playerTime').innerText = timeDisplay;
+  document.getElementById('aiTime').innerText = timeDisplay;
   
   // Reset the board to initial position
   if (board) {
