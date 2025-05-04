@@ -11,6 +11,12 @@ let isPaused = false;
 let lastTimerUpdate = 0; // Timestamp of last timer update
 let possibleMovesSquares = []; // Track squares that have possible moves highlights
 let selectedSquare = null; // For click-to-move functionality
+let recentMoves = []; // Array to track recent AI moves
+
+// Tracking wins, losses, and total games
+let wins = 0;
+let losses = 0;
+let totalGames = 0;
 
 // DOM elements - we'll populate these after DOM is loaded
 let statusElement;
@@ -18,6 +24,7 @@ let undoButton;
 let resetButton;
 let pauseButton;
 let moveListElement;
+let winRateElement; // Element to display win rate
 
 // Initialize event listeners
 document.addEventListener('DOMContentLoaded', function() {
@@ -27,6 +34,7 @@ document.addEventListener('DOMContentLoaded', function() {
   resetButton = document.getElementById('resetBtn');
   pauseButton = document.getElementById('pauseBtn');
   moveListElement = document.getElementById('moveList');
+  winRateElement = document.getElementById('winRate'); // Assuming there's an element to display win rate
   
   // Add event listeners
   document.getElementById("startBtn").addEventListener("click", startGame);
@@ -37,7 +45,13 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize an empty board without game functionality
   board = Chessboard('board', {
     position: 'start',
-    draggable: false
+    draggable: true,
+    onDragStart: onDragStart,
+    onDrop: onDrop,
+    onMouseoverSquare: onMouseoverSquare,
+    onMouseoutSquare: onMouseoutSquare,
+    onClick: onSquareClick,
+    orientation: playerColor === 'w' ? 'white' : 'black'
   });
 });
 
@@ -66,6 +80,7 @@ function startGame() {
   isPlayerTurn = playerColor === 'w'; // If player is white, they start first
   isPaused = false;
   selectedSquare = null;
+  recentMoves = []; // Reset recent moves
   
   // Update button state
   pauseButton.textContent = "Pause";
@@ -91,7 +106,7 @@ function startGame() {
     onDrop: onDrop,
     onMouseoverSquare: onMouseoverSquare,
     onMouseoutSquare: onMouseoutSquare,
-    onSquareClick: onSquareClick,
+    onClick: onSquareClick,
     orientation: playerColor === 'w' ? 'white' : 'black'
   });
 
@@ -136,13 +151,17 @@ function updateTimers() {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! AI wins!";
-    // Removed alert
+    losses++; // Increment losses
+    totalGames++; // Increment total games
+    updateWinRate();
   }
   if (aiTime <= 0 && gameActive) {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! You win!";
-    // Removed alert
+    wins++; // Increment wins
+    totalGames++; // Increment total games
+    updateWinRate();
   }
 }
 
@@ -209,6 +228,7 @@ function greySquare(square) {
 function removeGreySquares() {
   for (let square of possibleMovesSquares) {
     $('#board .square-' + square).removeClass('highlight-square');
+    $('#board .square-' + square).removeClass('selected-square');
   }
   possibleMovesSquares = [];
 }
@@ -225,6 +245,12 @@ function onDragStart(source, piece) {
   // Only allow dragging player's pieces
   if (playerColor === 'w' ? piece.search(/^b/) !== -1 : piece.search(/^w/) !== -1) {
     return false;
+  }
+  
+  // Clear any existing selections when starting a drag
+  if (selectedSquare !== null) {
+    removeGreySquares();
+    selectedSquare = null;
   }
 }
 
@@ -297,26 +323,22 @@ function endGame() {
  */
 function makeAIMove() {
   if (!gameActive || game.game_over() || isPaused) return;
-  
+
   // Set AI is thinking status
   statusElement.textContent = "AI is thinking...";
   statusElement.classList.add('thinking');
-  
+
   // Randomize AI thinking time based on difficulty level
-  // Novice: 1000-3000ms, Intermediate: 2000-5000ms, Master: 3000-7000ms
   const minThinkTime = aiLevel === 1 ? 1000 : (aiLevel === 2 ? 2000 : 3000);
   const maxThinkTime = aiLevel === 1 ? 3000 : (aiLevel === 2 ? 5000 : 7000);
   const thinkingTime = Math.floor(Math.random() * (maxThinkTime - minThinkTime + 1)) + minThinkTime;
-  
+
   // Disable board interaction during AI's turn
   board.draggable = false;
-  
-  // The AI timer should be running during this time
-  // No need to manually update it since the updateTimers function handles it
-  
+
   setTimeout(() => {
     if (!gameActive || isPaused) return; // Check again in case the game was paused during AI think time
-    
+
     let move;
     // Select AI strategy based on difficulty level
     if (aiLevel === 1) {
@@ -324,27 +346,28 @@ function makeAIMove() {
     } else if (aiLevel === 2) {
       move = bestMoveMaterial(game);
     } else {
-      // Use deeper search for master level
       move = minimaxRoot(3, game, playerColor === 'w');
     }
-    
+
     // Make the selected move
     if (move) {
       const aiMove = game.move(move);
-      
+      recentMoves.push(aiMove.san); // Track the move
+      if (recentMoves.length > 3) recentMoves.shift(); // Limit history size
+
       // Update board
       board.position(game.fen());
-      
+
       // Update move list
       addMoveToList(aiMove, game.history().length);
-      
+
       // Switch back to player's turn
       isPlayerTurn = true;
       lastTimerUpdate = Date.now(); // Reset timer at turn switch
-      
+
       // Re-enable board interaction
       board.draggable = true;
-      
+
       // Update status
       statusElement.classList.remove('thinking');
       updateStatus();
@@ -556,13 +579,20 @@ function togglePause() {
   if (isPaused) {
     pauseButton.textContent = "Resume";
     statusElement.textContent = "Game paused";
-    // Store current time when pausing
   } else {
     pauseButton.textContent = "Pause";
     updateStatus(); // Update status text
-    // Reset timer reference point when resuming
-    lastTimerUpdate = Date.now();
+    lastTimerUpdate = Date.now(); // Reset timer reference point when resuming
   }
+}
+
+/**
+ * Highlights the selected square
+ */
+function highlightSelectedSquare(square) {
+  // Apply special highlighting to the selected square
+  $('#board .square-' + square).addClass('selected-square');
+  possibleMovesSquares.push(square);
 }
 
 /**
@@ -583,31 +613,27 @@ function onSquareClick(square) {
   if (selectedSquare === null && isPieceOwned) {
     // Select this square
     selectedSquare = square;
-    // Highlight the selected square
+    // Highlight the selected square and possible moves
     highlightSelectedSquare(square);
     
-    // Also highlight possible moves in novice mode
-    if (aiLevel === 1) {
-      const moves = game.moves({
-        square: square,
-        verbose: true
-      });
-      
-      for (let i = 0; i < moves.length; i++) {
-        greySquare(moves[i].to);
-        possibleMovesSquares.push(moves[i].to);
-      }
+    // Also highlight possible moves
+    const moves = game.moves({
+      square: square,
+      verbose: true
+    });
+    
+    for (let i = 0; i < moves.length; i++) {
+      greySquare(moves[i].to);
+      possibleMovesSquares.push(moves[i].to);
     }
     return;
   }
   
   // If there's already a selected square
   if (selectedSquare !== null) {
-    // Remove all highlights
-    removeGreySquares();
-    
     // If it's the same square, deselect it
     if (selectedSquare === square) {
+      removeGreySquares();
       selectedSquare = null;
       return;
     }
@@ -621,6 +647,9 @@ function onSquareClick(square) {
     
     // If it's a valid move
     if (move) {
+      // Remove highlights
+      removeGreySquares();
+      
       // Update board
       board.position(game.fen());
       
@@ -645,37 +674,30 @@ function onSquareClick(square) {
     
     // If it's not a valid move but the clicked square has the player's piece
     if (isPieceOwned) {
+      // Remove previous highlights
+      removeGreySquares();
+      
       // Switch selection to this piece
       selectedSquare = square;
       highlightSelectedSquare(square);
       
-      // Also highlight possible moves in novice mode
-      if (aiLevel === 1) {
-        const moves = game.moves({
-          square: square,
-          verbose: true
-        });
-        
-        for (let i = 0; i < moves.length; i++) {
-          greySquare(moves[i].to);
-          possibleMovesSquares.push(moves[i].to);
-        }
+      // Highlight possible moves
+      const moves = game.moves({
+        square: square,
+        verbose: true
+      });
+      
+      for (let i = 0; i < moves.length; i++) {
+        greySquare(moves[i].to);
+        possibleMovesSquares.push(moves[i].to);
       }
       return;
     }
     
     // If it's neither a valid move nor the player's piece, deselect
+    removeGreySquares();
     selectedSquare = null;
   }
-}
-
-/**
- * Highlights the selected square
- */
-function highlightSelectedSquare(square) {
-  // Apply special highlighting to the selected square
-  $('#board .square-' + square).addClass('selected-square');
-  possibleMovesSquares.push(square);
 }
 
 /**
@@ -716,4 +738,12 @@ function resetGame() {
   // Reset status
   statusElement.classList.remove('thinking');
   statusElement.textContent = "Ready to play";
+}
+
+/**
+ * Update the win rate display
+ */
+function updateWinRate() {
+  const winRate = totalGames > 0 ? (wins / totalGames) * 100 : 0;
+  winRateElement.textContent = `Win Rate: ${winRate.toFixed(2)}% (Wins: ${wins}, Losses: ${losses}, Total Games: ${totalGames})`;
 }
