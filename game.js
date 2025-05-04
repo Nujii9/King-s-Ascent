@@ -13,18 +13,12 @@ let possibleMovesSquares = []; // Track squares that have possible moves highlig
 let selectedSquare = null; // For click-to-move functionality
 let recentMoves = []; // Array to track recent AI moves
 
-// Tracking wins, losses, and total games
-let wins = 0;
-let losses = 0;
-let totalGames = 0;
-
 // DOM elements - we'll populate these after DOM is loaded
 let statusElement;
 let undoButton;
 let resetButton;
 let pauseButton;
 let moveListElement;
-let winRateElement; // Element to display win rate
 
 // Initialize event listeners
 document.addEventListener('DOMContentLoaded', function() {
@@ -34,7 +28,6 @@ document.addEventListener('DOMContentLoaded', function() {
   resetButton = document.getElementById('resetBtn');
   pauseButton = document.getElementById('pauseBtn');
   moveListElement = document.getElementById('moveList');
-  winRateElement = document.getElementById('winRate'); // Assuming there's an element to display win rate
   
   // Add event listeners
   document.getElementById("startBtn").addEventListener("click", startGame);
@@ -151,17 +144,11 @@ function updateTimers() {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! AI wins!";
-    losses++; // Increment losses
-    totalGames++; // Increment total games
-    updateWinRate();
   }
   if (aiTime <= 0 && gameActive) {
     gameActive = false;
     clearInterval(timerInterval);
     statusElement.textContent = "Time's up! You win!";
-    wins++; // Increment wins
-    totalGames++; // Increment total games
-    updateWinRate();
   }
 }
 
@@ -349,6 +336,12 @@ function makeAIMove() {
       move = minimaxRoot(3, game, playerColor === 'w');
     }
 
+    // Ensure the move is not a recent move
+    if (recentMoves.includes(move.san)) {
+      // If the move is repetitive, find an alternative
+      move = findAlternativeMove(game, recentMoves);
+    }
+
     // Make the selected move
     if (move) {
       const aiMove = game.move(move);
@@ -373,6 +366,19 @@ function makeAIMove() {
       updateStatus();
     }
   }, thinkingTime);
+}
+
+/**
+ * Find an alternative move that is not in the recent moves
+ */
+function findAlternativeMove(game, recentMoves) {
+  const moves = game.moves();
+  for (let move of moves) {
+    if (!recentMoves.includes(move.san)) {
+      return move; // Return the first non-recent move found
+    }
+  }
+  return null; // If all moves are recent, return null
 }
 
 /**
@@ -738,12 +744,4 @@ function resetGame() {
   // Reset status
   statusElement.classList.remove('thinking');
   statusElement.textContent = "Ready to play";
-}
-
-/**
- * Update the win rate display
- */
-function updateWinRate() {
-  const winRate = totalGames > 0 ? (wins / totalGames) * 100 : 0;
-  winRateElement.textContent = `Win Rate: ${winRate.toFixed(2)}% (Wins: ${wins}, Losses: ${losses}, Total Games: ${totalGames})`;
 }
