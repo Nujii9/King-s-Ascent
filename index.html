@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Chess Game</title>
+  <title>King's Ascent</title>
   <style>
     body { 
       font-family: monospace; 
       display: flex; 
       align-items: center; /* Center vertically */
-      justify-content: space-between; /* Space between left, center, and right */
+      justify-content: center; /* Center horizontally */
       background-color: #f5f5f5; /* Fallback color */
       background-image: url('king.png'); /* Set background image to king.png */
       background-size: cover; /* This will cover the entire background */
@@ -142,7 +142,7 @@
     }
     /* Win/Loss/Win Rate Display */
     #winStats {
-      margin-top: 20px;
+      margin-top: 10px;
       padding: 10px;
       background-color: rgba(200, 200, 200, 0.8);
       border-radius: 8px;
@@ -191,9 +191,6 @@
       <div>AI: <span id="aiTime" class="timer-display">5:00</span></div>
     </div>
     <div id="gameStatus" class="status">Ready to play</div>
-      <div id="winStats">
-    <div id="winRate">Win Rate: 0% (Wins: 0, Losses: 0, Total Games: 0)</div>
-  </div>
   </div>
   
   <div class="game-container">
