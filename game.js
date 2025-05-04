@@ -9,12 +9,15 @@ let isPlayerTurn = true;
 let gameActive = false;
 let isPaused = false;
 let lastTimerUpdate = 0; // Timestamp of last timer update
+let possibleMovesSquares = []; // Track squares that have possible moves highlights
+let selectedSquare = null; // For click-to-move functionality
 
 // DOM elements - we'll populate these after DOM is loaded
 let statusElement;
 let undoButton;
 let resetButton;
 let pauseButton;
+let moveListElement;
 
 // Initialize event listeners
 document.addEventListener('DOMContentLoaded', function() {
@@ -23,6 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
   undoButton = document.getElementById('undoBtn');
   resetButton = document.getElementById('resetBtn');
   pauseButton = document.getElementById('pauseBtn');
+  moveListElement = document.getElementById('moveList');
   
   // Add event listeners
   document.getElementById("startBtn").addEventListener("click", startGame);
@@ -51,6 +55,7 @@ function startGame() {
   game = new Chess();
   aiLevel = parseInt(document.getElementById("aiLevel").value);
   isBlitz = document.getElementById("mode").value === "blitz";
+  playerColor = document.getElementById("playerColor").value;
   
   // Set exact time values based on game mode
   playerTime = isBlitz ? 300 : 900; // 5 or 15 minutes
@@ -58,8 +63,9 @@ function startGame() {
   
   // Set game state
   gameActive = true;
-  isPlayerTurn = true; // Player always starts first
+  isPlayerTurn = playerColor === 'w'; // If player is white, they start first
   isPaused = false;
+  selectedSquare = null;
   
   // Update button state
   pauseButton.textContent = "Pause";
@@ -69,6 +75,9 @@ function startGame() {
   // Display exact initial times
   document.getElementById('playerTime').innerText = isBlitz ? "5:00" : "15:00";
   document.getElementById('aiTime').innerText = isBlitz ? "5:00" : "15:00";
+  
+  // Clear move list
+  moveListElement.innerHTML = "";
   
   // Set up the board
   if (board) {
@@ -80,7 +89,10 @@ function startGame() {
     draggable: true,
     onDragStart: onDragStart,
     onDrop: onDrop,
-    orientation: 'white'
+    onMouseoverSquare: onMouseoverSquare,
+    onMouseoutSquare: onMouseoutSquare,
+    onSquareClick: onSquareClick,
+    orientation: playerColor === 'w' ? 'white' : 'black'
   });
 
   // Start the timer only after everything is set up
@@ -88,7 +100,13 @@ function startGame() {
   timerInterval = setInterval(updateTimers, 1000);
   
   // Update status
-  statusElement.textContent = "Game started! Your move.";
+  if (isPlayerTurn) {
+    statusElement.textContent = "Game started! Your move.";
+  } else {
+    statusElement.textContent = "Game started! AI is thinking...";
+    // If player chose black, AI makes first move
+    setTimeout(() => makeAIMove(), 500);
+  }
 }
 
 /**
@@ -138,6 +156,64 @@ function formatTime(sec) {
 }
 
 /**
+ * Handles mouse over square event for highlighting possible moves
+ */
+function onMouseoverSquare(square, piece) {
+  // Only show possible moves for novice level
+  if (!gameActive || !isPlayerTurn || isPaused || aiLevel !== 1) return;
+  
+  // Don't show moves for opponent's pieces
+  if (piece && (playerColor === 'w' ? piece.search(/^b/) !== -1 : piece.search(/^w/) !== -1)) return;
+  
+  // Get list of possible moves for this square
+  const moves = game.moves({
+    square: square,
+    verbose: true
+  });
+  
+  // Return if there are no moves available for this square
+  if (moves.length === 0) return;
+  
+  // Highlight the square being moused over
+  greySquare(square);
+  
+  // Highlight possible moves
+  for (let i = 0; i < moves.length; i++) {
+    greySquare(moves[i].to);
+    possibleMovesSquares.push(moves[i].to);
+  }
+  possibleMovesSquares.push(square);
+}
+
+/**
+ * Handles mouse out square event to remove highlights
+ */
+function onMouseoutSquare() {
+  // Remove all highlights
+  removeGreySquares();
+}
+
+/**
+ * Highlights a square for possible moves
+ */
+function greySquare(square) {
+  const $square = $('#board .square-' + square);
+  
+  // Add highlight class
+  $square.addClass('highlight-square');
+}
+
+/**
+ * Removes all square highlights
+ */
+function removeGreySquares() {
+  for (let square of possibleMovesSquares) {
+    $('#board .square-' + square).removeClass('highlight-square');
+  }
+  possibleMovesSquares = [];
+}
+
+/**
  * Controls when dragging pieces is allowed
  */
 function onDragStart(source, piece) {
@@ -147,7 +223,7 @@ function onDragStart(source, piece) {
   }
   
   // Only allow dragging player's pieces
-  if (piece.search(/^b/) !== -1) {
+  if (playerColor === 'w' ? piece.search(/^b/) !== -1 : piece.search(/^w/) !== -1) {
     return false;
   }
 }
@@ -156,6 +232,9 @@ function onDragStart(source, piece) {
  * Handles the piece drop event
  */
 function onDrop(source, target) {
+  // Remove any highlights
+  removeGreySquares();
+  
   // Try to make the move
   const move = game.move({
     from: source,
@@ -168,6 +247,9 @@ function onDrop(source, target) {
   
   // Update board position
   board.position(game.fen());
+  
+  // Update move list
+  addMoveToList(move, game.history().length);
   
   // Switch turns - end player's timer and start AI's timer
   isPlayerTurn = false;
@@ -220,9 +302,11 @@ function makeAIMove() {
   statusElement.textContent = "AI is thinking...";
   statusElement.classList.add('thinking');
   
-  // Scale AI thinking time based on difficulty level
-  // Novice: 1000ms, Intermediate: 1000ms, Master: 2000ms
-  const thinkingTime = aiLevel === 1 ? 1500 : (aiLevel === 2 ? 1500 : 3000);
+  // Randomize AI thinking time based on difficulty level
+  // Novice: 1000-3000ms, Intermediate: 2000-5000ms, Master: 3000-7000ms
+  const minThinkTime = aiLevel === 1 ? 1000 : (aiLevel === 2 ? 2000 : 3000);
+  const maxThinkTime = aiLevel === 1 ? 3000 : (aiLevel === 2 ? 5000 : 7000);
+  const thinkingTime = Math.floor(Math.random() * (maxThinkTime - minThinkTime + 1)) + minThinkTime;
   
   // Disable board interaction during AI's turn
   board.draggable = false;
@@ -241,15 +325,18 @@ function makeAIMove() {
       move = bestMoveMaterial(game);
     } else {
       // Use deeper search for master level
-      move = minimaxRoot(3, game, true);
+      move = minimaxRoot(3, game, playerColor === 'w');
     }
     
     // Make the selected move
     if (move) {
-      game.move(move);
+      const aiMove = game.move(move);
       
       // Update board
       board.position(game.fen());
+      
+      // Update move list
+      addMoveToList(aiMove, game.history().length);
       
       // Switch back to player's turn
       isPlayerTurn = true;
@@ -263,6 +350,31 @@ function makeAIMove() {
       updateStatus();
     }
   }, thinkingTime);
+}
+
+/**
+ * Add move to the move list
+ */
+function addMoveToList(move, moveNumber) {
+  const notation = move.san;
+  const isWhite = moveNumber % 2 !== 0;
+  const moveRow = isWhite ? 
+    document.createElement('div') : 
+    moveListElement.lastElementChild;
+  
+  if (isWhite) {
+    moveRow.className = 'move-row';
+    moveRow.innerHTML = `<span class="move-number">${Math.ceil(moveNumber/2)}.</span><span class="white-move">${notation}</span>`;
+    moveListElement.appendChild(moveRow);
+  } else {
+    const blackMove = document.createElement('span');
+    blackMove.className = 'black-move';
+    blackMove.textContent = notation;
+    moveRow.appendChild(blackMove);
+  }
+  
+  // Scroll to bottom of move list
+  moveListElement.scrollTop = moveListElement.scrollHeight;
 }
 
 /**
@@ -309,8 +421,14 @@ function evaluateBoard(board) {
       // Get the base piece value
       let val = pieceValues[piece.type] || 0;
       
-      // AI plays as black, so reverse the values
-      total += piece.color === 'w' ? -val : val;
+      // AI plays as opposite color to player
+      if (playerColor === 'w') {
+        // AI plays as black
+        total += piece.color === 'w' ? -val : val;
+      } else {
+        // AI plays as white
+        total += piece.color === 'w' ? val : -val;
+      }
     }
   }
   
@@ -406,9 +524,22 @@ function undoMove() {
   // Update board
   board.position(game.fen());
   
+  // Remove the last move entry from the move list
+  if (moveListElement.lastElementChild) {
+    const lastRow = moveListElement.lastElementChild;
+    if (lastRow.querySelector('.black-move')) {
+      // Remove the black move span
+      lastRow.removeChild(lastRow.querySelector('.black-move'));
+    } else {
+      // Remove the entire row if it only contains a white move
+      moveListElement.removeChild(lastRow);
+    }
+  }
+  
   // Reset to player's turn
   isPlayerTurn = true;
   lastTimerUpdate = Date.now(); // Reset timer after undo
+  selectedSquare = null; // Reset selected square for click-to-move
   
   // Update status
   updateStatus();
@@ -435,6 +566,119 @@ function togglePause() {
 }
 
 /**
+ * Handles click-to-move functionality
+ */
+function onSquareClick(square) {
+  // Do nothing if the game is over, paused, or it's not the player's turn
+  if (game.game_over() || !gameActive || !isPlayerTurn || isPaused) {
+    return;
+  }
+  
+  // Check if a piece on this square belongs to the player
+  const piece = game.get(square);
+  const isPieceOwned = piece && 
+    (playerColor === 'w' ? piece.color === 'w' : piece.color === 'b');
+  
+  // If no square is selected and the clicked square has the player's piece
+  if (selectedSquare === null && isPieceOwned) {
+    // Select this square
+    selectedSquare = square;
+    // Highlight the selected square
+    highlightSelectedSquare(square);
+    
+    // Also highlight possible moves in novice mode
+    if (aiLevel === 1) {
+      const moves = game.moves({
+        square: square,
+        verbose: true
+      });
+      
+      for (let i = 0; i < moves.length; i++) {
+        greySquare(moves[i].to);
+        possibleMovesSquares.push(moves[i].to);
+      }
+    }
+    return;
+  }
+  
+  // If there's already a selected square
+  if (selectedSquare !== null) {
+    // Remove all highlights
+    removeGreySquares();
+    
+    // If it's the same square, deselect it
+    if (selectedSquare === square) {
+      selectedSquare = null;
+      return;
+    }
+    
+    // Try to make a move
+    const move = game.move({
+      from: selectedSquare,
+      to: square,
+      promotion: 'q' // Always promote to queen for simplicity
+    });
+    
+    // If it's a valid move
+    if (move) {
+      // Update board
+      board.position(game.fen());
+      
+      // Update move list
+      addMoveToList(move, game.history().length);
+      
+      // Reset selected square
+      selectedSquare = null;
+      
+      // Switch turns - end player's timer and start AI's timer  
+      isPlayerTurn = false;
+      lastTimerUpdate = Date.now(); // Reset timer at turn switch
+      
+      // Update status
+      updateStatus();
+      
+      // AI makes a move after a short delay
+      makeAIMove();
+      
+      return;
+    }
+    
+    // If it's not a valid move but the clicked square has the player's piece
+    if (isPieceOwned) {
+      // Switch selection to this piece
+      selectedSquare = square;
+      highlightSelectedSquare(square);
+      
+      // Also highlight possible moves in novice mode
+      if (aiLevel === 1) {
+        const moves = game.moves({
+          square: square,
+          verbose: true
+        });
+        
+        for (let i = 0; i < moves.length; i++) {
+          greySquare(moves[i].to);
+          possibleMovesSquares.push(moves[i].to);
+        }
+      }
+      return;
+    }
+    
+    // If it's neither a valid move nor the player's piece, deselect
+    selectedSquare = null;
+  }
+}
+
+/**
+ * Highlights the selected square
+ */
+function highlightSelectedSquare(square) {
+  // Apply special highlighting to the selected square
+  $('#board .square-' + square).addClass('selected-square');
+  possibleMovesSquares.push(square);
+}
+
+/**
  * Resets the game to initial state
  */
 function resetGame() {
@@ -447,6 +691,8 @@ function resetGame() {
   // Reset game state
   gameActive = false;
   isPaused = false;
+  selectedSquare = null;
+  removeGreySquares();
   
   // Reset timers to default values with fixed display
   const timeDisplay = isBlitz ? "5:00" : "15:00";
@@ -458,6 +704,9 @@ function resetGame() {
     board.position('start');
     board.draggable = false;
   }
+  
+  // Clear move list
+  moveListElement.innerHTML = "";
   
   // Reset buttons
   pauseButton.textContent = "Pause";
